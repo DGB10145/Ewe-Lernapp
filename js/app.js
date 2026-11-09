@@ -72,7 +72,7 @@
   // Globale Klicks: Anhören / Sprechen
   document.addEventListener('click', async e => {
     const s = e.target.closest('[data-say]');
-    if (s) { e.preventDefault(); s.disabled = true; const r = await A.say(s.dataset.say); s.disabled = false; if (r === 'hum' && !S.hintHum) { S.hintHum = 1; save(); toast('♪ Tonmelodie (hoch/tief). Nimm eine Muttersprachler-Referenz auf, um echte Aussprache zu hören.'); } return; }
+    if (s) { e.preventDefault(); s.disabled = true; const r = await A.say(s.dataset.say); s.disabled = false; if (r === 'hum' && !S.hintHum) { S.hintHum = 1; save(); toast('♪ Tonmelodie (hoch/tief). Für echte Aussprache: Aufnahmen importieren (Üben → Sprachcoach).'); } return; }
     const same = e.target.closest('a[href^="#/"]');
     if (same && same.getAttribute('href') === location.hash) { e.preventDefault(); route(); return; }
     const m = e.target.closest('[data-speak]');
@@ -101,63 +101,123 @@
     return out.map(s => `<div class="hint"><b class="ewe">${esc(s[0])}</b> – ${esc(s[1])}</div>`).join('');
   }
 
-  // Sprech-Trainer
+  // Alle Texte der App (für Import-Zuordnung und Coach)
+  let ALL = null;
+  function allTexts() {
+    if (ALL) return ALL;
+    const m = new Map();
+    const add = (e, de, src) => { if (!e) return; e.split(' / ').forEach(x => { const k = A.keyOf(x); if (!m.has(k)) m.set(k, { e: x.normalize('NFC'), de, src }); }); };
+    V.forEach(v => add(v.e, v.de, 'Wort · L' + v.l));
+    L.forEach(l => { l.sections.forEach(s => (s.ex || []).forEach(x => add(x[0], x[1], 'Beispiel · L' + l.n))); l.sentences.forEach(x => add(x[0], x[1], 'Satz · L' + l.n)); (l.dialog ? l.dialog.lines : []).forEach(x => add(x[1], x[2], 'Dialog · L' + l.n)); (l.song ? l.song.lines : []).forEach(x => add(x[0], x[1], 'Lied · L' + l.n)); });
+    window.EWE_PHRASES.forEach(c => c.items.forEach(i => add(i[0], i[1], 'Alltag')));
+    window.EWE_SOUNDS.forEach(s => add(s[2], s[3], 'Laut ' + s[0]));
+    window.EWE_TONES.pairs.forEach(p => { add(p[0], p[1], 'Tonpaar'); add(p[2], p[3], 'Tonpaar'); });
+    ALL = m; return m;
+  }
+  const looseKey = s => A.stripAll(A.keyOf(s)).replace(/[.,!?;:“”"„'’…]/g, '').replace(/\s+/g, ' ').trim();
+  function textInfo(text) { return allTexts().get(A.keyOf(text)) || { e: text, de: '', src: 'eigener Text' }; }
+  function suggest(q, n = 6) {
+    const qq = looseKey(q); if (!qq) return [];
+    const out = [];
+    for (const v of allTexts().values()) {
+      const e = looseKey(v.e), d = (v.de || '').toLowerCase();
+      const sc = e === qq ? 0 : e.startsWith(qq) ? 1 : e.includes(qq) ? 2 : d.includes(qq) ? 3 : 9;
+      if (sc < 9) out.push([sc, e.length, v]);
+    }
+    return out.sort((a, b) => a[0] - b[0] || a[1] - b[1]).slice(0, n).map(x => x[2]);
+  }
+  // Coach-Statistik
+  function coachStat(text) { S.coach = S.coach || {}; return S.coach[A.keyOf(text)]; }
+  function coachSave(text, score) {
+    S.coach = S.coach || {}; const k = A.keyOf(text);
+    const c = S.coach[k] || { best: 0, n: 0 };
+    c.best = Math.max(c.best, score); c.last = score; c.n++; c.at = Date.now();
+    S.coach[k] = c; save();
+  }
+
+  // Ergebnis-Anzeige für einen Sprechversuch
+  async function evaluateAttempt(text, blob, ref, out) {
+    out.innerHTML = '<p class="muted small center">Analysiere …</p>';
+    try {
+      if (ref) {
+        const r = await A.compareToRef(blob, ref.blob, A.keyOf(text));
+        if (!r.ok) { out.innerHTML = `<p class="muted">${esc(r.msg)}</p>`; return null; }
+        const tip = [];
+        if (r.tone != null && r.tone < 55) tip.push('Achte auf die <b>Tonhöhe</b>: Vergleiche die gelbe Kurve (Vorbild) mit deiner grünen.');
+        if (r.sound < 50) tip.push('Die <b>Laute</b> weichen noch ab – hör dir das Vorbild langsam an (🐢) und sprich Silbe für Silbe.');
+        if (r.durRatio > 1.6) tip.push('Du sprichst deutlich <b>langsamer</b> als das Vorbild – das ist am Anfang okay.');
+        if (r.durRatio < 0.6) tip.push('Du sprichst <b>schneller</b> als das Vorbild – nimm dir Zeit für jede Silbe.');
+        out.innerHTML = `<canvas class="pitch" id="cmpCv"></canvas>
+          <div class="legend"><span><i style="background:rgba(242,183,5,.8)"></i>Muttersprachler</span><span><i style="background:var(--accent)"></i>Du</span></div>
+          <div class="score">${r.total}%</div>
+          <div class="stats"><div class="stat"><b>${r.tone == null ? '–' : r.tone + '%'}</b><span>Töne</span></div><div class="stat"><b>${r.sound}%</b><span>Laute (Richtwert)</span></div><div class="stat"><b>${r.durRatio.toFixed(1)}×</b><span>Dauer</span></div></div>
+          <p class="center small">${r.total >= 75 ? 'Sehr gut! 🎉' : r.total >= 55 ? 'Gut – noch ein bisschen feilen.' : 'Weiter üben – hör genau hin.'}</p>
+          ${tip.map(t => `<div class="hint">${t}</div>`).join('')}`;
+        requestAnimationFrame(() => A.drawCompare($('#cmpCv'), r));
+        coachSave(text, r.total); addXp(r.total >= 55 ? 3 : 1);
+        return r.total;
+      }
+      const tr = await A.pitchTrack(blob);
+      const res = A.analyzeAttempt(tr, text);
+      out.innerHTML = res.ok
+        ? `<canvas class="pitch" id="spCv"></canvas><div class="legend"><span><i style="background:rgba(242,183,5,.7)"></i>Ziel (Tonzeichen)</span><span><i style="background:var(--accent)"></i>Du</span></div>
+           ${res.score != null ? `<div class="score">${res.score}%</div><p class="center small muted">Ton-Ähnlichkeit ${res.score >= 75 ? '– sehr gut! 🎉' : res.score >= 50 ? '– gut, weiter üben.' : '– achte auf hoch/tief.'}</p>` : ''}
+           <p class="small muted center">Ohne Muttersprachler-Aufnahme wird nur die Tonmelodie geprüft.</p>`
+        : `<p class="muted">${esc(res.msg)}</p>`;
+      if (res.ok) requestAnimationFrame(() => A.drawContour($('#spCv'), res));
+      if (res.ok && res.score != null) { coachSave(text, res.score); addXp(res.score >= 50 ? 3 : 1); }
+      return res.ok ? res.score : null;
+    } catch (err) {
+      out.innerHTML = `<p class="muted small">Analyse nicht möglich (${esc(err.message || err)}).</p>`;
+      return null;
+    }
+  }
+  // Aufnahme-Knopf: startet/stoppt und ruft onBlob
+  function bindRecButton(btn, onBlob, label = '🎤 Nachsprechen') {
+    btn.onclick = async () => {
+      if (A.isRecording()) { const b = await A.stopRec(); btn.innerHTML = '🎤 Nochmal'; onBlob(b); }
+      else {
+        try { A.stopAudio && A.stopAudio(); await A.startRec(); btn.innerHTML = '<span class="recdot"></span>Stopp'; }
+        catch (err) { toast('Mikrofon nicht verfügbar: ' + (err.message || err)); }
+      }
+    };
+    btn.innerHTML = label;
+  }
+
+  // Sprech-Trainer (Bottom-Sheet)
   async function openSpeak(text, de) {
     const ref = await A.getRef(text);
+    const st = coachStat(text);
     openSheet(`
       <div class="big-ewe">${esc(show(text))}</div>
       ${de ? `<p class="center muted">${esc(de)}</p>` : ''}
       ${A.toneChips(text)}
-      <div class="row mt"><button class="btn secondary grow" id="spHum">♪ Tonmelodie</button>${ref ? '<button class="btn gold grow" id="spRef">▶ Referenz</button>' : ''}</div>
+      <div class="row mt">${ref ? '<button class="btn gold grow" id="spRef">▶ Vorbild</button><button class="btn secondary" id="spSlow" title="langsam">🐢</button>' : ''}<button class="btn secondary grow" id="spHum">♪ Tonmelodie</button></div>
       ${soundHints(text)}
       <div class="card">
-        <p class="small muted">Sprich nach und vergleiche deine Tonkontur (grün) mit der Zielmelodie (gelb).</p>
-        <button class="btn block red" id="spRec">🎤 Aufnehmen</button>
+        <p class="small muted">${ref ? 'Hör dir das Vorbild an, sprich nach und vergleiche Töne und Laute.' : 'Sprich nach und vergleiche deine Tonkurve (grün) mit der Zielmelodie (gelb).'}${st ? ` Bisher bestes Ergebnis: <b>${st.best}%</b>.` : ''}</p>
+        <button class="btn block red" id="spRec"></button>
         <div id="spOut" class="mt"></div>
+        <button class="btn secondary block mt" id="spMine" hidden>▶ Meine Aufnahme</button>
       </div>
-      <details><summary>Muttersprachler-Referenz ${ref ? '(vorhanden)' : ''}</summary>
-        <p class="small muted">Lass eine/n Ewe-Sprecher/in diesen Text einsprechen. Die Aufnahme wird nur auf deinem Gerät gespeichert und überall in der App abgespielt.</p>
-        <button class="btn secondary block" id="spRefRec">🎙️ Referenz aufnehmen</button>
-        ${ref ? '<button class="btn secondary block mt" id="spRefDel">🗑️ Referenz löschen</button>' : ''}
+      <details><summary>Vorbild-Aufnahme ${ref ? '(vorhanden)' : ''}</summary>
+        <p class="small muted">Lass eine/n Ewe-Sprecher/in diesen Text einsprechen oder importiere Audiodateien unter Üben → Sprachcoach. Aufnahmen bleiben nur auf diesem Gerät.</p>
+        <button class="btn secondary block" id="spRefRec">🎙️ Vorbild aufnehmen</button>
+        ${ref ? '<button class="btn secondary block mt" id="spRefDel">🗑️ Vorbild löschen</button>' : ''}
         <div id="spRefOut" class="small mt"></div>
       </details>`);
     $('#spHum').onclick = () => A.hum(text);
-    if ($('#spRef')) $('#spRef').onclick = () => A.playBlob(ref.blob);
+    if (ref) { $('#spRef').onclick = () => A.playBlob(ref.blob); $('#spSlow').onclick = () => A.playBlob(ref.blob, 0.7); }
     let lastBlob = null;
-    const recBtn = $('#spRec');
-    recBtn.onclick = async () => {
-      if (A.isRecording()) {
-        const blob = await A.stopRec(); lastBlob = blob;
-        recBtn.innerHTML = '🎤 Nochmal aufnehmen';
-        $('#spOut').innerHTML = '<p class="muted small">Analysiere …</p>';
-        try {
-          const tr = await A.pitchTrack(blob);
-          const res = A.analyzeAttempt(tr, text);
-          $('#spOut').innerHTML = res.ok
-            ? `<canvas class="pitch" id="spCv"></canvas><div class="legend"><span><i style="background:rgba(242,183,5,.7)"></i>Ziel</span><span><i style="background:var(--accent)"></i>Du</span></div>
-               ${res.score != null ? `<div class="score">${res.score}%</div><p class="center small muted">Ton-Ähnlichkeit ${res.score >= 75 ? '– sehr gut! 🎉' : res.score >= 50 ? '– gut, weiter üben.' : '– achte auf hoch/tief.'}</p>` : ''}
-               <div class="row"><button class="btn secondary grow" id="spMine">▶ Meine Aufnahme</button>${ref ? '<button class="btn gold grow" id="spRef2">▶ Referenz</button>' : ''}</div>`
-            : `<p class="muted">${esc(res.msg)}</p><button class="btn secondary block" id="spMine">▶ Meine Aufnahme</button>`;
-          if (res.ok) requestAnimationFrame(() => A.drawContour($('#spCv'), res));
-          if (res.ok && res.score != null) addXp(res.score >= 50 ? 3 : 1);
-        } catch (err) {
-          $('#spOut').innerHTML = `<p class="muted small">Analyse nicht möglich (${esc(err.message || err)}). Du kannst deine Aufnahme trotzdem anhören.</p><button class="btn secondary block" id="spMine">▶ Meine Aufnahme</button>`;
-        }
-        $('#spMine') && ($('#spMine').onclick = () => A.playBlob(lastBlob));
-        $('#spRef2') && ($('#spRef2').onclick = () => A.playBlob(ref.blob));
-      } else {
-        try { await A.startRec(); recBtn.innerHTML = '<span class="recdot"></span>Stopp'; $('#spOut').innerHTML = '<p class="small muted">Sprich jetzt … und tippe dann auf Stopp.</p>'; }
-        catch (err) { toast('Mikrofon nicht verfügbar: ' + (err.message || err)); }
-      }
-    };
+    bindRecButton($('#spRec'), async blob => { lastBlob = blob; $('#spMine').hidden = false; await evaluateAttempt(text, blob, ref, $('#spOut')); });
+    $('#spMine').onclick = () => lastBlob && A.playBlob(lastBlob);
     const rr = $('#spRefRec');
     rr.onclick = async () => {
       if (A.isRecording()) {
         const blob = await A.stopRec();
         await A.putRef(text, blob);
-        $('#spRefOut').textContent = '✔ Referenz gespeichert.'; rr.textContent = '🎙️ Neu aufnehmen';
-        A.playBlob(blob);
-        refreshRefMarks();
+        $('#spRefOut').textContent = '✔ Vorbild gespeichert.'; rr.textContent = '🎙️ Neu aufnehmen';
+        A.playBlob(blob); refreshRefMarks();
       } else {
         try { await A.startRec(); rr.innerHTML = '<span class="recdot"></span>Stopp & speichern'; } catch (err) { toast('Mikrofon nicht verfügbar.'); }
       }
@@ -215,6 +275,7 @@
         <span>${esc(next.goal)}</span>
       </a>
       <div class="grid2 wide">
+        <a class="tile" href="#/coach"><div class="ic">🎧</div><b>Sprachcoach</b><span>Nachsprechen & vergleichen</span></a>
         <a class="tile" href="#/sound"><div class="ic">🗣️</div><b>Aussprache & Töne</b><span>Laute, Tonhöhen, Sprechtraining</span></a>
         <a class="tile" href="#/phrases"><div class="ic">💬</div><b>Alltagssätze</b><span>Begrüßen, Markt, Essen</span></a>
         <a class="tile" href="#/dict"><div class="ic">🔎</div><b>Wörterbuch</b><span>${V.length} Wörter Ewe ⇄ Deutsch</span></a>
@@ -224,7 +285,7 @@
         <ol class="small"><li>Arbeite die <b>Lektionen</b> der Reihe nach durch – jede hat Grammatik, Wörter und ein Quiz.</li>
         <li>Wiederhole täglich die <b>fälligen Karten</b> (Spaced Repetition).</li>
         <li>Tippe ▶ für die <b>Tonmelodie</b> und 🎤, um selbst zu sprechen und deine Tonkurve zu sehen.</li>
-        <li>Lass eine/n Muttersprachler/in Wörter als <b>Referenz</b> einsprechen – dann hörst du überall echte Aussprache.</li></ol>
+        <li>Importiere Muttersprachler-Aufnahmen (MP3) für den <b>Sprachcoach</b> – dann hörst du überall echte Aussprache.</li></ol>
         <button class="btn secondary block" id="obOk">Verstanden</button></div>` : ''}
       <p class="small muted center mt">Inhalt nach: S. W. Dzablu-Kumah, „Basic Ewe for Foreign Students“, 2. Aufl., hrsg. von U. Claudi & J. A. Ossey, Köln 2015.</p>`);
     if ($('#obOk')) $('#obOk').onclick = () => { S.onboard = true; save(); route(); };
@@ -438,11 +499,12 @@
       <div class="card"><h3 style="margin-top:0">🧠 Tägliche Wiederholung</h3>
         <p class="muted small">Karten kommen in wachsenden Abständen wieder (1, 3, 7, 16 … Tage). Neue Wörter stammen aus den Lektionen, die du geöffnet hast.</p>
         <a class="btn block" href="#/review">Start: ${due} fällig · ${nc} neu</a></div>
+      <a class="card tile" href="#/coach" style="display:block"><div class="row"><div class="ic">🎧</div><div class="grow"><b style="margin:0">Sprachcoach</b><span>Hören, nachsprechen, Töne & Laute mit Muttersprachler-Aufnahmen vergleichen</span></div><span class="muted">›</span></div></a>
       <div class="grid2">
         <a class="tile" href="#/write"><div class="ic">✍️</div><b>Schreiben</b><span>Deutsch → Ewe tippen</span></a>
         <a class="tile" href="#/tonequiz"><div class="ic">🎵</div><b>Tontraining</b><span>Hoch, tief, steigend erkennen</span></a>
         <a class="tile" href="#/mixbuild"><div class="ic">🧩</div><b>Satzbau</b><span>Sätze aus allen Lektionen</span></a>
-        <a class="tile" href="#/listen"><div class="ic">👂</div><b>Hören</b><span>Mit deinen Referenzaufnahmen</span></a>
+        <a class="tile" href="#/listen"><div class="ic">👂</div><b>Hören</b><span>Mit deinen Vorbild-Aufnahmen</span></a>
         <a class="tile" href="#/verbs"><div class="ic">🔁</div><b>Verben</b><span>Zeiten & Pronomen</span></a>
         <a class="tile" href="#/numbers"><div class="ic">🔢</div><b>Zahlen</b><span>1 bis 9000</span></a>
       </div>
@@ -527,18 +589,186 @@
   };
   routes.listen = async () => {
     setTitle('Hören', true); setTab('practice');
-    const keys = await A.allRefKeys();
-    const all = [...V.map(v => [v.e, v.de]), ...L.flatMap(l => l.sentences), ...window.EWE_PHRASES.flatMap(c => c.items.map(i => [i[0], i[1]]))];
-    const items = all.filter(x => keys.includes(x[0].normalize('NFC').trim().toLowerCase()));
-    const uniq = [...new Map(items.map(x => [x[0], x])).values()];
+    const uniq = (await refItems()).filter(x => x.de).map(x => [x.e, x.de]);
     if (uniq.length < 4) {
-      view(`<div class="card"><h3>👂 Hörverständnis</h3><p>Für diese Übung brauchst du mindestens 4 <b>Referenzaufnahmen</b> von Muttersprachler/innen (bisher: ${uniq.length}).</p>
+      view(`<div class="card"><h3>👂 Hörverständnis</h3><p>Für diese Übung brauchst du mindestens 4 <b>Vorbild-Aufnahmen</b> von Muttersprachler/innen (bisher: ${uniq.length}).</p>
         <p class="small muted">Tippe bei einem Wort oder Satz auf 🎤 → „Muttersprachler-Referenz“ → aufnehmen. Ideal: Bitte eine/n Ewe-Sprecher/in, die Alltagssätze und Wörter der ersten Lektionen einzusprechen. Du kannst Aufnahmen auch unter Mehr → Einstellungen importieren.</p>
-        <a class="btn block" href="#/phrases">Zu den Alltagssätzen</a></div>`);
+        <a class="btn block" href="#/import">📥 Aufnahmen importieren</a></div>`);
       return;
     }
     const qs = pick(uniq, Math.min(10, uniq.length)).map(x => ({ type: 'mc', prompt: 'Hör zu – was bedeutet das?', listen: x[0], ans: x[1], opts: shuffle([x[1], ...pick(uniq.filter(y => y !== x), 3).map(y => y[1])]) }));
     runQuiz(qs, { done: (r, t) => view(`<div class="card center"><div class="score">${r}/${t}</div><a class="btn block" href="#/practice">Zurück</a></div>`) });
+  };
+
+  // ---------- Sprachcoach ----------
+  async function refItems() {
+    const keys = await A.allRefKeys();
+    const out = [];
+    for (const k of keys) {
+      const r = await A.getRef(k); if (!r) continue;
+      const info = textInfo(r.text || k);
+      out.push({ e: info.e || r.text, de: info.de, src: info.src, ref: r });
+    }
+    return out;
+  }
+  routes.coach = async (mode = 'mix') => {
+    setTitle('Sprachcoach', true); setTab('practice');
+    view('<p class="muted center">Lade Aufnahmen …</p>');
+    const items = await refItems();
+    if (!items.length) {
+      view(`<div class="card hero"><h2 style="margin-top:4px">🎧 Dein Sprachcoach</h2><p>Der Coach spielt dir echte Ewe-Aussprache vor, du sprichst nach – und er vergleicht <b>Töne</b> und <b>Laute</b> mit dem Vorbild.</p><div class="kente"></div></div>
+        <div class="card"><h3 style="margin-top:0">So startest du</h3><ol class="small">
+          <li>Lege deine Audiodateien (MP3, M4A, WAV …) in die <b>Dateien</b>-App.</li>
+          <li>Benenne jede Datei nach dem Ewe-Wort oder -Satz, z. B. <span class="ewe">atí.mp3</span> oder <span class="ewe">Akpé.mp3</span> (Tonzeichen optional).</li>
+          <li>Tippe unten auf <b>Aufnahmen importieren</b>. Lange Aufnahmen mit vielen Wörtern kannst du dort automatisch zerlegen.</li></ol>
+          <p class="small muted">Die Aufnahmen werden nur auf diesem Gerät gespeichert und nirgendwo hochgeladen.</p>
+          <a class="btn block" href="#/import">📥 Aufnahmen importieren</a></div>`);
+      return;
+    }
+    const score = it => { const c = coachStat(it.e); return c ? c.best : -1; };
+    const words = items.filter(i => !i.e.includes(' ') || i.e.split(' ').length <= 2), sents = items.filter(i => i.e.split(' ').length > 2);
+    let pool = mode === 'words' ? words : mode === 'sents' ? sents : items;
+    if (!pool.length) pool = items;
+    // schwächste und neue zuerst, etwas gemischt
+    const session = shuffle(pool).sort((a, b) => score(a) - score(b)).slice(0, 8);
+    const scores = [];
+    let i = 0;
+    const step = () => {
+      if (i >= session.length) {
+        const done = scores.filter(x => x != null), avg = done.length ? Math.round(done.reduce((s, v) => s + v, 0) / done.length) : 0;
+        view(`<div class="card center"><div style="font-size:56px">${avg >= 70 ? '🏆' : '💪'}</div><h3>Runde beendet</h3><div class="score">${avg}%</div><p class="muted">Durchschnitt aus ${done.length} Versuchen</p>
+          <a class="btn block" href="#/coach/${mode}">↺ Neue Runde</a><div class="sp"></div><a class="btn secondary block" href="#/import">📥 Weitere Aufnahmen</a></div>
+          <div class="card">${session.map((it, k) => `<div class="ex">${playBtn(it.e)}<div class="txt">${eweHtml(it.e)}<div class="de">${esc(it.de || '')}</div></div><b>${scores[k] == null ? '–' : scores[k] + '%'}</b></div>`).join('')}</div>`);
+        refreshRefMarks(); return;
+      }
+      const it = session[i], st = coachStat(it.e);
+      view(`<div class="seg">${[['mix', 'Gemischt'], ['words', 'Wörter'], ['sents', 'Sätze']].map(t => `<button class="${t[0] === mode ? 'on' : ''}" data-m="${t[0]}">${t[1]}</button>`).join('')}</div>
+        <div class="progress"><i style="width:${i / session.length * 100}%"></i></div><p class="small muted center mt">${i + 1} von ${session.length} · ${esc(it.src || '')}${st ? ' · bisher ' + st.best + '%' : ' · neu'}</p>
+        <div class="card center"><div class="big-ewe">${esc(show(it.e))}</div>${it.de ? `<p class="muted">${esc(it.de)}</p>` : ''}${A.toneChips(it.e)}
+          <div class="row mt"><button class="btn gold grow" id="cRef">▶ Vorbild</button><button class="btn secondary" id="cSlow">🐢 langsam</button></div>
+          ${soundHints(it.e)}
+          <p class="small muted mt">1. Zuhören · 2. Nachsprechen · 3. Vergleichen</p>
+          <button class="btn block red" id="cRec"></button>
+          <div id="cOut" class="mt"></div>
+          <button class="btn secondary block mt" id="cMine" hidden>▶ Meine Aufnahme</button></div>
+        <div class="row"><button class="btn secondary grow" id="cSkip">Überspringen</button><button class="btn grow" id="cNext" disabled>Weiter ›</button></div>`);
+      $$('.seg [data-m]').forEach(b => (b.onclick = () => location.replace('#/coach/' + b.dataset.m)));
+      $('#cRef').onclick = () => A.playBlob(it.ref.blob);
+      $('#cSlow').onclick = () => A.playBlob(it.ref.blob, 0.7);
+      setTimeout(() => A.playBlob(it.ref.blob), 250);
+      let last = null;
+      bindRecButton($('#cRec'), async blob => {
+        last = blob; $('#cMine').hidden = false;
+        const sc = await evaluateAttempt(it.e, blob, it.ref, $('#cOut'));
+        if (sc != null) scores[i] = Math.max(scores[i] || 0, sc);
+        $('#cNext').disabled = false;
+      });
+      $('#cMine').onclick = () => last && A.playBlob(last);
+      $('#cSkip').onclick = () => { i++; step(); };
+      $('#cNext').onclick = () => { i++; step(); };
+    };
+    step();
+  };
+
+  // ---------- Import ----------
+  function cleanName(name) {
+    let s = name.replace(/\.[a-z0-9]{2,5}$/i, '');
+    try { s = decodeURIComponent(s); } catch (e) {}
+    return s.replace(/[_+]+/g, ' ').replace(/^\s*\d+\s*[-.)_:]*\s*/, '').replace(/\s*\(\d+\)\s*$/, '').trim().normalize('NFC');
+  }
+  function matchName(name) {
+    const c = cleanName(name), all = allTexts();
+    const exact = all.get(A.keyOf(c)); if (exact) return exact;
+    const lk = looseKey(c);
+    const hits = [...all.values()].filter(v => looseKey(v.e) === lk);
+    return hits.length === 1 ? hits[0] : null;
+  }
+  const toBlob = async f => new Blob([await f.arrayBuffer()], { type: f.type || (/\.m4a$/i.test(f.name) ? 'audio/mp4' : /\.wav$/i.test(f.name) ? 'audio/wav' : 'audio/mpeg') });
+
+  // Zuordnungs-Zeile für eine nicht erkannte Datei / einen Ausschnitt
+  function assignRow(idx, label, hint) {
+    return `<div class="card asg" data-i="${idx}"><div class="row"><button class="play" data-play="${idx}">▶</button><div class="grow small"><b>${esc(label)}</b>${hint ? `<div class="muted">${esc(hint)}</div>` : ''}</div></div>
+      <input type="text" class="ewe aq" placeholder="Ewe-Text oder deutsches Wort suchen …" autocapitalize="off" spellcheck="false" value="">
+      <div class="sugg"></div>
+      <div class="row mt"><button class="btn small secondary own">Als eigenen Text speichern</button><button class="btn small secondary skip">Verwerfen</button></div>
+      <div class="small done muted"></div></div>`;
+  }
+  function bindAssign(container, blobs, onSaved) {
+    $$('.asg', container).forEach(card => {
+      const i = +card.dataset.i, inp = $('.aq', card), sg = $('.sugg', card), msg = $('.done', card);
+      const saveAs = async (text, de) => {
+        await A.putRef(text, blobs[i]);
+        card.innerHTML = `<div class="row"><span class="grow">✔ ${eweHtml(text)} ${de ? `<span class="small muted">– ${esc(de)}</span>` : ''}</span>${playBtn(text)}</div>`;
+        onSaved && onSaved(); refreshRefMarks();
+      };
+      $('[data-play]', card).onclick = () => A.playBlob(blobs[i]);
+      inp.oninput = () => {
+        const s = suggest(inp.value);
+        sg.innerHTML = s.map((v, k) => `<button class="opt ewe" data-k="${k}" style="padding:8px 10px;margin-top:6px;width:100%">${esc(show(v.e))} <span class="small muted">· ${esc(v.de || '')} · ${esc(v.src)}</span></button>`).join('');
+        $$('[data-k]', sg).forEach(b => (b.onclick = () => saveAs(s[+b.dataset.k].e, s[+b.dataset.k].de)));
+      };
+      $('.own', card).onclick = () => { const t = inp.value.trim(); if (!t) { msg.textContent = 'Bitte zuerst den Ewe-Text eintippen.'; return; } saveAs(t.normalize('NFC'), ''); };
+      $('.skip', card).onclick = () => card.remove();
+    });
+  }
+
+  routes.import = async () => {
+    setTitle('Aufnahmen importieren', true); setTab('practice');
+    const keys = await A.allRefKeys();
+    view(`<div class="card"><h3 style="margin-top:0">📥 Audiodateien importieren</h3>
+        <p class="small">Wähle eine oder mehrere Dateien aus der <b>Dateien</b>-App (MP3, M4A, WAV …). Heißt eine Datei wie ein Ewe-Wort oder -Satz der App (z. B. <span class="ewe">atí.mp3</span>, <span class="ewe">01_Akpé.mp3</span>), wird sie automatisch zugeordnet. Für alle anderen kannst du den Text suchen und zuweisen.</p>
+        <p class="small muted">ZIP-Archive vorher in der Dateien-App antippen, dann werden sie entpackt. Die Aufnahmen bleiben nur auf diesem Gerät.</p>
+        <label class="btn block">🎵 Einzelne Dateien wählen<input type="file" id="impF" multiple accept="audio/*,.mp3,.m4a,.wav,.aac,.ogg,.json" hidden></label></div>
+      <div id="impRes"></div>
+      <div class="card"><h3 style="margin-top:0">✂️ Lange Aufnahme zerlegen</h3>
+        <p class="small">Enthält eine Datei viele Wörter hintereinander (z. B. aus einem Video), zerlegt die App sie an den Sprechpausen. Danach ordnest du jeden Ausschnitt einem Wort zu.</p>
+        <label class="switch"><span class="small">Mindestpause zwischen Wörtern</span><select id="gap" style="width:auto"><option value="0.25">kurz (0,25 s)</option><option value="0.35" selected>mittel (0,35 s)</option><option value="0.6">lang (0,6 s)</option><option value="1">sehr lang (1 s)</option></select></label>
+        <label class="btn secondary block">✂️ Datei zum Zerlegen wählen<input type="file" id="impS" accept="audio/*,.mp3,.m4a,.wav,.aac,.ogg" hidden></label></div>
+      <div id="splitRes"></div>
+      <details class="card"><summary>Meine Vorbild-Aufnahmen (${keys.length})</summary><div id="refList" class="mt"><p class="muted small">Lade …</p></div></details>
+      ${keys.length ? '<a class="btn block" href="#/coach">🎧 Zum Sprachcoach</a>' : ''}`);
+
+    // Liste vorhandener Aufnahmen
+    const det = $('details.card');
+    det.addEventListener('toggle', async () => {
+      if (!det.open) return;
+      const items = await refItems();
+      $('#refList').innerHTML = items.length ? items.sort((a, b) => a.e.localeCompare(b.e)).map(it => `<div class="ex">${playBtn(it.e)}<div class="txt">${eweHtml(it.e)}<div class="de">${esc(it.de || it.src || '')}</div></div><button class="play" data-del="${esc(it.e)}" aria-label="Löschen">🗑️</button></div>`).join('') : '<p class="muted small">Noch keine Aufnahmen.</p>';
+      $$('[data-del]').forEach(b => (b.onclick = async () => { await A.delRef(b.dataset.del); b.closest('.ex').remove(); }));
+      refreshRefMarks();
+    });
+
+    $('#impF').onchange = async e => {
+      const files = [...e.target.files]; e.target.value = '';
+      const res = $('#impRes'); res.innerHTML = '<div class="card"><p class="muted">Importiere …</p></div>';
+      let ok = 0; const matched = [], open = [], blobs = [];
+      for (const f of files) {
+        if (/\.json$/i.test(f.name)) { try { const o = JSON.parse(await f.text()); ok += await A.importRefs(o.items || []); } catch (err) { toast('JSON ungültig: ' + f.name); } continue; }
+        const b = await toBlob(f), m = matchName(f.name);
+        if (m) { await A.putRef(m.e, b); ok++; matched.push(m); }
+        else { blobs.push(b); open.push({ name: f.name, clean: cleanName(f.name) }); }
+      }
+      res.innerHTML = `<div class="card"><b>✔ ${ok} zugeordnet</b>${open.length ? ` · <b>${open.length} offen</b>` : ''}
+        ${matched.length ? `<details><summary class="small">Zugeordnete anzeigen</summary>${matched.map(m => `<div class="ex">${playBtn(m.e)}<div class="txt">${eweHtml(m.e)}<div class="de">${esc(m.de)}</div></div></div>`).join('')}</details>` : ''}</div>
+        ${open.length ? '<h3>Nicht erkannt – bitte zuordnen</h3>' + open.map((o, k) => assignRow(k, o.name, 'Suche den passenden Text oder tippe ihn ein.')).join('') : ''}`;
+      open.forEach((o, k) => { const card = $(`.asg[data-i="${k}"]`, res); const inp = $('.aq', card); inp.value = o.clean; inp.dispatchEvent(new Event('input')); });
+      bindAssign(res, blobs);
+      refreshRefMarks();
+      if (ok) toast(ok + ' Aufnahmen gespeichert.');
+    };
+
+    $('#impS').onchange = async e => {
+      const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+      const res = $('#splitRes'); res.innerHTML = '<div class="card"><p class="muted">Zerlege … (bei langen Dateien kann das etwas dauern)</p></div>';
+      try {
+        const segs = await A.splitBySilence(await toBlob(f), +$('#gap').value);
+        if (!segs.length) { res.innerHTML = '<div class="card"><p>Keine Sprachabschnitte gefunden.</p></div>'; return; }
+        const fmt = t => Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padStart(2, '0');
+        res.innerHTML = `<div class="card"><b>${segs.length} Ausschnitte gefunden.</b><p class="small muted">Hör jeden Ausschnitt an (▶) und ordne ihn zu. Ausschnitte ohne Ewe (z. B. Erklärungen) einfach verwerfen. Zu viele oder zu wenige Stücke? Andere Mindestpause wählen und neu zerlegen.</p></div>` +
+          segs.slice(0, 200).map((s, k) => assignRow(k, `Ausschnitt ${k + 1}`, `${fmt(s.start)}–${fmt(s.end)} · ${(s.end - s.start).toFixed(1)} s`)).join('');
+        bindAssign(res, segs.map(s => s.blob));
+      } catch (err) { res.innerHTML = `<div class="card"><p>Datei konnte nicht gelesen werden (${esc(err.message || err)}).</p></div>`; }
+    };
   };
 
   // ---------- Aussprache ----------
@@ -577,6 +807,7 @@
       <a class="tile" href="#/numbers"><div class="ic">🔢</div><b>Zahlen</b><span>Trainer & Tabelle</span></a>
       <a class="tile" href="#/verbs"><div class="ic">🔁</div><b>Verben</b><span>Konjugationstrainer</span></a>
       <a class="tile" href="#/days"><div class="ic">📅</div><b>Wochentage & Namen</b><span>Kofi, Ama, Kɔsi …</span></a>
+      <a class="tile" href="#/import"><div class="ic">📥</div><b>Aufnahmen importieren</b><span>MP3s für den Sprachcoach</span></a>
       <a class="tile" href="#/settings"><div class="ic">⚙️</div><b>Einstellungen</b><span>Töne, Backup, Audio</span></a>
       <a class="tile" href="#/about"><div class="ic">ℹ️</div><b>Über Ewe & App</b><span>Installieren, Quellen</span></a>
     </div>`);

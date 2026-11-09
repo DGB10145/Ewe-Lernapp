@@ -14,6 +14,11 @@ Eine eigenständige Lern-App für **Ewe aus Ghana** (Eʋegbe) als Web-App für d
   - **Tonmelodie**: Jedes Wort und jeder Satz lässt sich als Folge von Hoch-, Tief-, Steig- und Falltönen anhören.
   - **Sprechtrainer**: Du nimmst dich auf. Die App misst die Tonhöhe deiner Stimme, zeichnet deine Tonkurve über die Zielmelodie und bewertet die Übereinstimmung in Prozent.
   - **Muttersprachler-Referenzen**: Eine Ewe-Sprecherin oder ein Ewe-Sprecher kann Wörter und Sätze einsprechen. Diese Aufnahmen spielt die App dann überall ab, auch in der Übung „Hören“. Du kannst die Aufnahmen exportieren und importieren.
+- **Sprachcoach** mit eigenen Muttersprachler-Aufnahmen
+  - Import von MP3/M4A/WAV aus der Dateien-App, mit automatischer Zuordnung über den Dateinamen (z. B. `atí.mp3`) und Suche für alle anderen Dateien
+  - lange Aufnahmen (z. B. mit vielen Wörtern) werden an Sprechpausen automatisch zerlegt
+  - geführte Runden: Vorbild hören (auch langsam), nachsprechen, Bewertung von **Tönen** (Tonhöhenkurve) und **Lauten** (MFCC + Dynamic Time Warping), schwächste Wörter zuerst
+  - die Aufnahmen bleiben ausschließlich auf dem Gerät (IndexedDB) und werden nicht veröffentlicht
 - **Alltagssätze** zu Begrüßung, Kennenlernen, Markt, Essen und Unterwegs, außerdem ein **Zahlentrainer**, ein **Verbtrainer** mit allen Zeiten und Pronomen sowie **Wochentage und Tagesnamen** (Kofi, Ama, Kɔsi …)
 - Tonzeichen lassen sich ein- und ausblenden. Der Fortschritt lässt sich sichern. Die App unterstützt den Dunkelmodus.
 
