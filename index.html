@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Eʋegbe – Ewe lernen</title>
+<meta name="description" content="Ewe (Eʋegbe) aus Ghana lernen: 17 Lektionen, 1100+ Wörter, Aussprache- und Tontrainer – offline.">
+<meta name="theme-color" content="#0B6E4F">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Eʋegbe">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="apple-touch-icon" sizes="152x152" href="icons/icon-152.png">
+<link rel="apple-touch-icon" sizes="167x167" href="icons/icon-167.png">
+<link rel="apple-touch-icon" sizes="180x180" href="icons/icon-180.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<header id="topbar">
+  <button id="backBtn" class="icon-btn" aria-label="Zurück" hidden>‹</button>
+  <h1 id="title">Eʋegbe</h1>
+  <span id="xpBadge" class="xp" title="Erfahrungspunkte"></span>
+</header>
+<main id="view" tabindex="-1"></main>
+<nav id="tabbar">
+  <a href="#/home" data-tab="home"><span class="ti">🏠</span><span>Start</span></a>
+  <a href="#/lessons" data-tab="lessons"><span class="ti">📖</span><span>Lektionen</span></a>
+  <a href="#/practice" data-tab="practice"><span class="ti">🧠</span><span>Üben</span></a>
+  <a href="#/sound" data-tab="sound"><span class="ti">🗣️</span><span>Aussprache</span></a>
+  <a href="#/more" data-tab="more"><span class="ti">☰</span><span>Mehr</span></a>
+</nav>
+<div id="sheet" class="sheet" hidden><div class="sheet-card" role="dialog" aria-modal="true"><button class="sheet-close icon-btn" aria-label="Schließen">✕</button><div id="sheetBody"></div></div></div>
+<div id="toast" hidden></div>
+<script src="data/vocab.js"></script>
+<script src="data/lessons.js"></script>
+<script src="data/extras.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
