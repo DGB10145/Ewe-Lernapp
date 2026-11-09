@@ -107,10 +107,11 @@
     if (ALL) return ALL;
     const m = new Map();
     const add = (e, de, src) => { if (!e) return; e.split(' / ').forEach(x => { const k = A.keyOf(x); if (!m.has(k)) m.set(k, { e: x.normalize('NFC'), de, src }); }); };
+    window.EWE_SOUNDS.forEach(s => { if (!s[0].includes(' ')) add(s[0], 'Laut ' + s[0] + ' – ' + s[1], 'Laut'); });
     V.forEach(v => add(v.e, v.de, 'Wort · L' + v.l));
+    window.EWE_SOUNDS.forEach(s => add(s[2], s[3], 'Laut ' + s[0]));
     L.forEach(l => { l.sections.forEach(s => (s.ex || []).forEach(x => add(x[0], x[1], 'Beispiel · L' + l.n))); l.sentences.forEach(x => add(x[0], x[1], 'Satz · L' + l.n)); (l.dialog ? l.dialog.lines : []).forEach(x => add(x[1], x[2], 'Dialog · L' + l.n)); (l.song ? l.song.lines : []).forEach(x => add(x[0], x[1], 'Lied · L' + l.n)); });
     window.EWE_PHRASES.forEach(c => c.items.forEach(i => add(i[0], i[1], 'Alltag')));
-    window.EWE_SOUNDS.forEach(s => add(s[2], s[3], 'Laut ' + s[0]));
     window.EWE_TONES.pairs.forEach(p => { add(p[0], p[1], 'Tonpaar'); add(p[2], p[3], 'Tonpaar'); });
     ALL = m; return m;
   }
@@ -779,7 +780,7 @@
     let body = '';
     if (tab === 'sounds') {
       body = `<p class="small muted">Das Ewe-Alphabet hat 30 Buchstaben. Besonders wichtig für Deutschsprachige sind die markierten Laute ⭐.</p>
-        <div class="card">${window.EWE_SOUNDS.map(s => `<div class="ex">${playBtn(s[2])}<div class="txt"><span class="ewe" style="font-size:22px">${esc(s[0])}</span> ${s[4] ? '⭐' : ''}<div class="small">${esc(s[1])}</div><div class="de">z. B. <span class="ewe">${esc(show(s[2]))}</span> – ${esc(s[3])}</div></div>${micBtn(s[2], s[3])}</div>`).join('')}</div>
+        <div class="card">${window.EWE_SOUNDS.map(s => { const single = !s[0].includes(' '); return `<div class="ex">${single ? playBtn(s[0]) : ''}<div class="txt"><span class="ewe" style="font-size:22px">${esc(s[0])}</span> ${s[4] ? '⭐' : ''}<div class="small">${esc(s[1])}</div><div class="de">z. B. <span class="ewe">${esc(show(s[2]))}</span> – ${esc(s[3])} ${playBtn(s[2])}</div></div>${micBtn(single ? s[0] : s[2], single ? 'Laut ' + s[0] + ': ' + s[1] : s[3])}</div>`; }).join('')}</div>
         <div class="card"><h3>Tipp: kp und gb</h3><p class="small">Die Doppelverschlusslaute sind die größte Hürde. Übung: Sage „k“ und halte die Zunge hinten. Schließe dann zusätzlich die Lippen und löse <i>beides gleichzeitig</i>. Es klingt wie ein kurzes „Klopfen“. Übe mit <span class="ewe">kpé</span> (Stein), <span class="ewe">kpɔ́</span> (sehen), <span class="ewe">gbe</span> (Tag), <span class="ewe">agble</span> (Farm).</p></div>`;
     } else if (tab === 'tones') {
       body = `<div class="card"><p>${T.intro}</p>${T.kinds.map(k => `<div class="ex"><div class="syl">${A.toneSvg(k[0] === 'á' ? 'H' : k[0] === 'a' ? 'L' : k[0] === 'ǎ' ? 'R' : 'F')}</div><div class="txt"><b>${esc(k[0])} – ${esc(k[1])}</b><div class="de">${esc(k[2])}; ${esc(k[3])}</div></div></div>`).join('')}</div>

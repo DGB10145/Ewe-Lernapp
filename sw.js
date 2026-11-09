@@ -1,5 +1,5 @@
 /* Service Worker: macht Eʋegbe offline nutzbar. Bei Änderungen VERSION erhöhen. */
-const VERSION = 'ewe-v2';
+const VERSION = 'ewe-v3';
 const ASSETS = [
   './', './index.html', './manifest.webmanifest', './css/app.css',
   './js/app.js', './js/audio.js', './data/vocab.js', './data/lessons.js', './data/extras.js',
